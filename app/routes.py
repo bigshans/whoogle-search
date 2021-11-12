@@ -268,7 +268,7 @@ def search():
                 if 'isch' not in search_util.search_type else '')), resp_code
 
 
-@app.route('/config', methods=['GET', 'POST', 'PUT'])
+@app.route('/config', methods=['GET'])
 @auth_required
 def config():
     config_disabled = app.config['CONFIG_DISABLE']
