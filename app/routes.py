@@ -1,5 +1,6 @@
 import argparse
 import base64
+import html
 import io
 import json
 import pickle
@@ -8,19 +9,32 @@ import uuid
 from functools import wraps
 
 import waitress
-from flask import jsonify, make_response, request, redirect, render_template, \
-    send_file, session, url_for
-from requests import exceptions
-
 from app import app
 from app.models.config import Config
 from app.request import Request, TorError
 from app.utils.bangs import resolve_bang
-from app.utils.session import generate_user_key, valid_user_session
+from app.utils.misc import read_config_bool, get_client_ip
+from app.utils.results import add_ip_card
+from app.utils.results import bold_search_terms
 from app.utils.search import *
+from app.utils.session import generate_user_key, valid_user_session
+from bs4 import BeautifulSoup as bsoup
+from flask import jsonify, make_response, request, redirect, render_template, \
+    send_file, session, url_for
+from requests import exceptions, get
 
 # Load DDG bang json files only on init
 bang_json = json.load(open(app.config['BANG_FILE']))
+
+
+# Check the newest version of WHOOGLE
+update = bsoup(get(app.config['RELEASES_URL']).text, 'html.parser')
+newest_version = update.select_one('[class="Link--primary"]').string[1:]
+current_version = int(''.join(filter(str.isdigit,
+                                     app.config['VERSION_NUMBER'])))
+newest_version = int(''.join(filter(str.isdigit, newest_version)))
+newest_version = '' if current_version >= newest_version \
+                    else newest_version
 
 
 def auth_required(f):
@@ -115,6 +129,11 @@ def healthz():
     return ''
 
 
+@app.route('/home', methods=['GET'])
+def home():
+    return redirect(url_for('.index'))
+
+
 @app.route('/', methods=['GET'])
 @auth_required
 def index():
@@ -128,6 +147,7 @@ def index():
         return render_template('error.html', error_message=error_message)
 
     return render_template('index.html',
+                           newest_version=newest_version,
                            languages=app.config['LANGUAGES'],
                            countries=app.config['COUNTRIES'],
                            themes=app.config['THEMES'],
@@ -173,6 +193,10 @@ def search_html():
 
 @app.route('/autocomplete', methods=['GET', 'POST'])
 def autocomplete():
+    ac_var = 'WHOOGLE_AUTOCOMPLETE'
+    if os.getenv(ac_var) and not read_config_bool(ac_var):
+        return jsonify({})
+
     q = g.request_params.get('q')
     if not q:
         # FF will occasionally (incorrectly) send the q field without a
@@ -239,9 +263,16 @@ def search():
 
     # Return 503 if temporarily blocked by captcha
     resp_code = 503 if has_captcha(str(response)) else 200
+    response = bold_search_terms(response, query)
+
+    # Feature to display IP address
+    if search_util.check_kw_ip():
+        html_soup = bsoup(str(response), 'html.parser')
+        response = add_ip_card(html_soup, get_client_ip(request))
 
     return render_template(
         'display.html',
+        newest_version=newest_version,
         query=urlparse.unquote(query),
         search_type=search_util.search_type,
         config=g.user_config,
@@ -265,7 +296,8 @@ def search():
             query=urlparse.unquote(query),
             search_type=search_util.search_type,
             mobile=g.user_request.mobile)
-                if 'isch' not in search_util.search_type else '')), resp_code
+                       if 'isch' not in
+                          search_util.search_type else '')), resp_code
 
 
 @app.route('/config', methods=['GET'])
@@ -366,7 +398,13 @@ def window():
     for script in results('script'):
         script.decompose()
 
-    return render_template('display.html', response=results)
+    return render_template(
+        'display.html',
+        response=results,
+        translation=app.config['TRANSLATIONS'][
+            g.user_config.get_localization_lang()
+        ]
+    )
 
 
 def run_app() -> None:

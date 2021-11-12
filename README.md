@@ -3,6 +3,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/benbusby/whoogle-search)](https://github.com/benbusby/shoogle/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![tests](https://github.com/benbusby/whoogle-search/actions/workflows/tests.yml/badge.svg)](https://github.com/benbusby/whoogle-search/actions/workflows/tests.yml)
+[![buildx](https://github.com/benbusby/whoogle-search/actions/workflows/buildx.yml/badge.svg)](https://github.com/benbusby/whoogle-search/actions/workflows/buildx.yml)
 [![pep8](https://github.com/benbusby/whoogle-search/workflows/pep8/badge.svg)](https://github.com/benbusby/whoogle-search/actions?query=workflow%3Apep8)
 [![codebeat badge](https://codebeat.co/badges/e96cada2-fb6f-4528-8285-7d72abd74e8d)](https://codebeat.co/projects/github-com-benbusby-shoogle-master)
 [![Docker Pulls](https://img.shields.io/docker/pulls/benbusby/whoogle-search)](https://hub.docker.com/r/benbusby/whoogle-search)
@@ -38,9 +39,9 @@ Contents
 
 ## Features
 - No ads or sponsored content
-- No javascript
-- No cookies
-- No tracking/linking of your personal IP address\*
+- No JavaScript\*
+- No cookies\*\*
+- No tracking/linking of your personal IP address\*\*\*
 - No AMP links
 - No URL tracking tags (i.e. utm=%s)
 - No referrer header
@@ -48,14 +49,18 @@ Contents
 - Autocomplete/search suggestions
 - POST request search and suggestion queries (when possible)
 - View images at full res without site redirect (currently mobile only)
-- Dark mode
+- Light/Dark/System theme modes (with support for [custom CSS theming](https://github.com/benbusby/whoogle-search/wiki/User-Contributed-CSS-Themes))
 - Randomly generated User Agent
 - Easy to install/deploy
 - DDG-style bang (i.e. `!<tag> <query>`) searches
 - Optional location-based searching (i.e. results near \<city\>)
-- Optional NoJS mode to disable all Javascript in results
+- Optional NoJS mode to view search results in a separate window with JavaScript blocked
 
-<sup>*If deployed to a remote server, or configured to send requests through a VPN, Tor, proxy, etc.</sup>
+<sup>*No third party JavaScript. Whoogle can be used with JavaScript disabled, but if enabled, uses JavaScript for things like presenting search suggestions.</sup>
+
+<sup>**No third party cookies. Whoogle uses server side cookies (sessions) to store non-sensitive configuration settings such as theme, language, etc. Just like with JavaScript, cookies can be disabled and not affect Whoogle's search functionality.</sup>
+
+<sup>***If deployed to a remote server, or configured to send requests through a VPN, Tor, proxy, etc.</sup>
 
 ## Dependencies
 If using Heroku Quick Deploy, **you can skip this section**.
@@ -72,14 +77,16 @@ If using Heroku Quick Deploy, **you can skip this section**.
 There are a few different ways to begin using the app, depending on your preferences:
 
 ### A) [Heroku Quick Deploy](https://heroku.com/about)
-[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/benbusby/whoogle-search/tree/heroku-app-beta)
-
-*Note: Requires a (free) Heroku account*
+[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/benbusby/whoogle-search/tree/main)
 
 Provides:
 - Free deployment of app
 - Free HTTPS url (https://\<your app name\>.herokuapp.com)
 - Downtime after periods of inactivity \([solution](https://github.com/benbusby/whoogle-search#prevent-downtime-heroku-only)\)
+
+Notes: 
+- Requires a (free) Heroku account
+- Sometimes has issues with auto-redirecting to `https`. Make sure to navigate to the `https` version of your app before adding as a default search engine.
 
 ### B) [Repl.it](https://repl.it)
 [![Run on Repl.it](https://repl.it/badge/github/benbusby/whoogle-search)](https://repl.it/github/benbusby/whoogle-search)
@@ -194,6 +201,7 @@ Description=Whoogle
 #Environment=WHOOGLE_ALT_IG=bibliogram.art/u
 #Environment=WHOOGLE_ALT_RD=libredd.it
 #Environment=WHOOGLE_ALT_TL=lingva.ml
+#Environment=WHOOGLE_ALT_MD=scribe.rip
 # Load values from dotenv only
 #Environment=WHOOGLE_DOTENV=1
 Type=simple
@@ -295,22 +303,25 @@ There are a few optional environment variables available for customizing a Whoog
 - With `docker-compose`: Uncomment the `env_file` option
 - With `docker build/run`: Add `--env-file ./whoogle.env` to your command
 
-| Variable           | Description                                                                               |
-| ------------------ | ----------------------------------------------------------------------------------------- |
-| WHOOGLE_DOTENV     | Load environment variables in `whoogle.env`                                               |
-| WHOOGLE_USER       | The username for basic auth. WHOOGLE_PASS must also be set if used.                       |
-| WHOOGLE_PASS       | The password for basic auth. WHOOGLE_USER must also be set if used.                       |
-| WHOOGLE_PROXY_USER | The username of the proxy server.                                                         |
-| WHOOGLE_PROXY_PASS | The password of the proxy server.                                                         |
-| WHOOGLE_PROXY_TYPE | The type of the proxy server. Can be "socks5", "socks4", or "http".                       |
-| WHOOGLE_PROXY_LOC  | The location of the proxy server (host or ip).                                            |
-| EXPOSE_PORT        | The port where Whoogle will be exposed.                                                   |
-| HTTPS_ONLY         | Enforce HTTPS. (See [here](https://github.com/benbusby/whoogle-search#https-enforcement)) |
-| WHOOGLE_ALT_TW     | The twitter.com alternative to use when site alternatives are enabled in the config.      |
-| WHOOGLE_ALT_YT     | The youtube.com alternative to use when site alternatives are enabled in the config.      |
-| WHOOGLE_ALT_IG     | The instagram.com alternative to use when site alternatives are enabled in the config.    |
-| WHOOGLE_ALT_RD     | The reddit.com alternative to use when site alternatives are enabled in the config.       |
-| WHOOGLE_ALT_TL     | The Google Translate alternative to use. This is used for all "translate ____" searches.  |
+| Variable             | Description                                                                               |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| WHOOGLE_DOTENV       | Load environment variables in `whoogle.env`                                               |
+| WHOOGLE_USER         | The username for basic auth. WHOOGLE_PASS must also be set if used.                       |
+| WHOOGLE_PASS         | The password for basic auth. WHOOGLE_USER must also be set if used.                       |
+| WHOOGLE_PROXY_USER   | The username of the proxy server.                                                         |
+| WHOOGLE_PROXY_PASS   | The password of the proxy server.                                                         |
+| WHOOGLE_PROXY_TYPE   | The type of the proxy server. Can be "socks5", "socks4", or "http".                       |
+| WHOOGLE_PROXY_LOC    | The location of the proxy server (host or ip).                                            |
+| EXPOSE_PORT          | The port where Whoogle will be exposed.                                                   |
+| HTTPS_ONLY           | Enforce HTTPS. (See [here](https://github.com/benbusby/whoogle-search#https-enforcement)) |
+| WHOOGLE_ALT_TW       | The twitter.com alternative to use when site alternatives are enabled in the config.      |
+| WHOOGLE_ALT_YT       | The youtube.com alternative to use when site alternatives are enabled in the config.      |
+| WHOOGLE_ALT_IG       | The instagram.com alternative to use when site alternatives are enabled in the config.    |
+| WHOOGLE_ALT_RD       | The reddit.com alternative to use when site alternatives are enabled in the config.       |
+| WHOOGLE_ALT_TL       | The Google Translate alternative to use. This is used for all "translate ____" searches.  |
+| WHOOGLE_ALT_MD       | The medium.com alternative to use when site alternatives are enabled in the config.       |
+| WHOOGLE_AUTOCOMPLETE | Controls visibility of autocomplete/search suggestions. Default on -- use '0' to disable  |
+| WHOOGLE_MINIMAL      | Remove everything except basic result cards from all search queries.                      |
 
 ### Config Environment Variables
 These environment variables allow setting default config values, but can be overwritten manually by using the home page config menu. These allow a shortcut for destroying/rebuilding an instance to the same config state every time.

@@ -9,7 +9,6 @@ import os
 from stem import Signal, SocketError
 from stem.control import Controller
 
-SEARCH_URL = 'https://www.google.com/search?gbv=1&q='
 MAPS_URL = 'https://maps.google.com/maps'
 AUTOCOMPLETE_URL = ('https://suggestqueries.google.com/'
                     'complete/search?client=toolbar&')
@@ -150,6 +149,8 @@ class Request:
     """
 
     def __init__(self, normal_ua, root_path, config: Config):
+        self.search_url = 'https://www.google.com/search?gbv=1&num=' + str(
+            os.getenv('WHOOGLE_RESULTS_PER_PAGE', 10)) + '&q='
         # Send heartbeat to Tor, used in determining if the user can or cannot
         # enable Tor for future requests
         send_tor_signal(Signal.HEARTBEAT)
@@ -157,6 +158,12 @@ class Request:
         self.language = (
             config.lang_search if config.lang_search else ''
         )
+
+        # For setting Accept-language Header
+        self.lang_interface = ''
+        if config.accept_language:
+            self.lang_interface = config.lang_interface
+
         self.mobile = bool(normal_ua) and ('Android' in normal_ua
                                            or 'iPhone' in normal_ua)
         self.modified_user_agent = gen_user_agent(self.mobile)
@@ -217,7 +224,7 @@ class Request:
         return [_.attrib['data'] for _ in
                 root.findall('.//suggestion/[@data]')]
 
-    def send(self, base_url=SEARCH_URL, query='', attempt=0,
+    def send(self, base_url='', query='', attempt=0,
              force_mobile=False) -> Response:
         """Sends an outbound request to a URL. Optionally sends the request
         using Tor, if enabled by the user.
@@ -243,7 +250,12 @@ class Request:
             'User-Agent': modified_user_agent
         }
 
-        # FIXME: Should investigate this further to ensure the consent
+        # Adding the Accept-Language to the Header if possible
+        if self.lang_interface:
+            headers.update({'Accept-Language':
+                            self.lang_interface.replace('lang_', '')
+                            + ';q=1.0'})
+
         # view is suppressed correctly
         now = datetime.now()
         cookies = {
@@ -273,7 +285,7 @@ class Request:
                     disable=True)
 
         response = requests.get(
-            base_url + query,
+            (base_url or self.search_url) + query,
             proxies=self.proxies,
             headers=headers,
             cookies=cookies)
@@ -283,6 +295,6 @@ class Request:
             attempt += 1
             if attempt > 10:
                 raise TorError("Tor query failed -- max attempts exceeded 10")
-            return self.send(base_url, query, attempt)
+            return self.send((base_url or self.search_url), query, attempt)
 
         return response
