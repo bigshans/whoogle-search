@@ -129,10 +129,17 @@ def before_request_func():
         if (not Endpoint.autocomplete.in_path(request.path) and
                 not Endpoint.healthz.in_path(request.path) and
                 not Endpoint.opensearch.in_path(request.path)):
+            url_base = app.config['WHOOGLE_CONFIG_URL']
+            if url_base:
+                return redirect(url_for(
+                    'session_check',
+                    session_id=session['uuid'],
+                    follow=get_request_url(request.url)), code=307)
+            new_url = '' if request.url is not None else url_base + str.join(request.url.split('/')[3:], '/')
             return redirect(url_for(
                 'session_check',
                 session_id=session['uuid'],
-                follow=get_request_url(request.url)), code=307)
+                follow=get_request_url(new_url)), code=307)
         else:
             g.user_config = Config(**session['config'])
     elif 'cookies_disabled' not in request.args:
@@ -190,7 +197,7 @@ def healthz():
     return ''
 
 
-# @app.route(f'/{Endpoint.session}/<session_id>', methods=['GET', 'PUT', 'POST'])
+@app.route(f'/{Endpoint.session}/<session_id>', methods=['GET', 'PUT', 'POST'])
 def session_check(session_id):
     if 'uuid' in session and session['uuid'] == session_id:
         session['valid'] = True
