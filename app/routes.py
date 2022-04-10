@@ -190,7 +190,7 @@ def healthz():
     return ''
 
 
-@app.route(f'/{Endpoint.session}/<session_id>', methods=['GET', 'PUT', 'POST'])
+# @app.route(f'/{Endpoint.session}/<session_id>', methods=['GET', 'PUT', 'POST'])
 def session_check(session_id):
     if 'uuid' in session and session['uuid'] == session_id:
         session['valid'] = True
