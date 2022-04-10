@@ -1,4 +1,6 @@
+from app.models.endpoint import Endpoint
 from bs4 import BeautifulSoup, NavigableString
+import copy
 import html
 import os
 import urllib.parse as urlparse
@@ -16,21 +18,24 @@ BLANK_B64 = ('data:image/png;base64,'
 
 # Ad keywords
 BLACKLIST = [
-    'ad', 'anuncio', 'annuncio', 'annonce', 'Anzeige', '广告', '廣告', 'Reklama',
-    'Реклама', 'Anunț', '광고', 'annons', 'Annonse', 'Iklan', '広告', 'Augl.',
-    'Mainos', 'Advertentie', 'إعلان', 'Գովազդ', 'विज्ञापन', 'Reklam', 'آگهی',
-    'Reklāma', 'Reklaam', 'Διαφήμιση', 'מודעה', 'Hirdetés', 'Anúncio'
+    'ad', 'ads', 'anuncio', 'annuncio', 'annonce', 'Anzeige', '广告', '廣告',
+    'Reklama', 'Реклама', 'Anunț', '광고', 'annons', 'Annonse', 'Iklan',
+    '広告', 'Augl.', 'Mainos', 'Advertentie', 'إعلان', 'Գովազդ', 'विज्ञापन',
+    'Reklam', 'آگهی', 'Reklāma', 'Reklaam', 'Διαφήμιση', 'מודעה', 'Hirdetés',
+    'Anúncio'
 ]
 
 SITE_ALTS = {
-    'twitter.com': os.getenv('WHOOGLE_ALT_TW', 'nitter.net'),
-    'youtube.com': os.getenv('WHOOGLE_ALT_YT', 'invidious.snopyta.org'),
-    'instagram.com': os.getenv('WHOOGLE_ALT_IG', 'bibliogram.art/u'),
-    'reddit.com': os.getenv('WHOOGLE_ALT_RD', 'libredd.it'),
+    'twitter.com': os.getenv('WHOOGLE_ALT_TW', 'farside.link/nitter'),
+    'youtube.com': os.getenv('WHOOGLE_ALT_YT', 'farside.link/invidious'),
+    'instagram.com': os.getenv('WHOOGLE_ALT_IG', 'farside.link/bibliogram/u'),
+    'reddit.com': os.getenv('WHOOGLE_ALT_RD', 'farside.link/libreddit'),
     **dict.fromkeys([
         'medium.com',
         'levelup.gitconnected.com'
-    ], os.getenv('WHOOGLE_ALT_MD', 'scribe.rip'))
+    ], os.getenv('WHOOGLE_ALT_MD', 'farside.link/scribe')),
+    'imgur.com': os.getenv('WHOOGLE_ALT_IMG', 'farside.link/rimgo'),
+    'wikipedia.org': os.getenv('WHOOGLE_ALT_WIKI', 'farside.link/wikiless')
 }
 
 
@@ -85,7 +90,8 @@ def has_ad_content(element: str) -> bool:
         bool: True/False for the element containing an ad
 
     """
-    return (element.upper() in (value.upper() for value in BLACKLIST)
+    element_str = ''.join(filter(str.isalpha, element))
+    return (element_str.upper() in (value.upper() for value in BLACKLIST)
             or 'ⓘ' in element)
 
 
@@ -122,7 +128,7 @@ def get_site_alt(link: str) -> str:
     hostname = urlparse.urlparse(link).hostname
 
     for site_key in SITE_ALTS.keys():
-        if not hostname or site_key not in hostname:
+        if not hostname or site_key not in hostname or not SITE_ALTS[site_key]:
             continue
 
         link = link.replace(hostname, SITE_ALTS[site_key])
@@ -177,7 +183,7 @@ def append_nojs(result: BeautifulSoup) -> None:
 
     """
     nojs_link = BeautifulSoup(features='html.parser').new_tag('a')
-    nojs_link['href'] = '/window?location=' + result['href']
+    nojs_link['href'] = f'/{Endpoint.window}?location=' + result['href']
     nojs_link.string = ' NoJS Link'
     result.append(nojs_link)
 
@@ -194,31 +200,174 @@ def add_ip_card(html_soup: BeautifulSoup, ip: str) -> BeautifulSoup:
         BeautifulSoup
 
     """
-    if (not html_soup.select_one(".EY24We")
-            and html_soup.select_one(".OXXup").get_text().lower() == "all"):
-        # HTML IP card tag
-        ip_tag = html_soup.new_tag("div")
-        ip_tag["class"] = "ZINbbc xpd O9g5cc uUPGi"
+    # HTML IP card tag
+    ip_tag = html_soup.new_tag('div')
+    ip_tag['class'] = 'ZINbbc xpd O9g5cc uUPGi'
 
-        # For IP Address html tag
-        ip_address = html_soup.new_tag("div")
-        ip_address["class"] = "kCrYT ip-address-div"
-        ip_address.string = ip
+    # For IP Address html tag
+    ip_address = html_soup.new_tag('div')
+    ip_address['class'] = 'kCrYT ip-address-div'
+    ip_address.string = ip
 
-        # Text below the IP address
-        ip_text = html_soup.new_tag("div")
-        ip_text.string = "Your public IP address"
-        ip_text["class"] = "kCrYT ip-text-div"
+    # Text below the IP address
+    ip_text = html_soup.new_tag('div')
+    ip_text.string = 'Your public IP address'
+    ip_text['class'] = 'kCrYT ip-text-div'
 
-        # Adding all the above html tags to the IP card
-        ip_tag.append(ip_address)
-        ip_tag.append(ip_text)
+    # Adding all the above html tags to the IP card
+    ip_tag.append(ip_address)
+    ip_tag.append(ip_text)
 
-        # Finding the element before which the IP card would be placed
-        f_link = html_soup.select_one(".BNeawe.vvjwJb.AP7Wnd")
-        ref_element = f_link.find_parent(class_="ZINbbc xpd O9g5cc" +
-                                                " uUPGi")
-
-        # Inserting the element
-        ref_element.insert_before(ip_tag)
+    # Insert the element at the top of the result list
+    html_soup.select_one('#main').insert_before(ip_tag)
     return html_soup
+
+
+def check_currency(response: str) -> dict:
+    """Check whether the results have currency conversion
+
+    Args:
+        response: Search query Result
+
+    Returns:
+        dict: Consists of currency names and values
+
+    """
+    soup = BeautifulSoup(response, 'html.parser')
+    currency_link = soup.find('a', {'href': 'https://g.co/gfd'})
+    if currency_link:
+        while 'class' not in currency_link.attrs or \
+                'ZINbbc' not in currency_link.attrs['class']:
+            currency_link = currency_link.parent
+        currency_link = currency_link.find_all(class_='BNeawe')
+        currency1 = currency_link[0].text
+        currency2 = currency_link[1].text
+        currency1 = currency1.rstrip('=').split(' ', 1)
+        currency2 = currency2.split(' ', 1)
+
+        # Handle differences in currency formatting
+        # i.e. "5.000" vs "5,000"
+        if currency2[0][-3] == ',':
+            currency1[0] = currency1[0].replace('.', '')
+            currency1[0] = currency1[0].replace(',', '.')
+            currency2[0] = currency2[0].replace('.', '')
+            currency2[0] = currency2[0].replace(',', '.')
+        else:
+            currency1[0] = currency1[0].replace(',', '')
+            currency2[0] = currency2[0].replace(',', '')
+
+        currency1_value = float(re.sub(r'[^\d\.]', '', currency1[0]))
+        currency1_label = currency1[1]
+
+        currency2_value = float(re.sub(r'[^\d\.]', '', currency2[0]))
+        currency2_label = currency2[1]
+
+        return {'currencyValue1': currency1_value,
+                'currencyLabel1': currency1_label,
+                'currencyValue2': currency2_value,
+                'currencyLabel2': currency2_label
+                }
+    return {}
+
+
+def add_currency_card(soup: BeautifulSoup,
+                      conversion_details: dict) -> BeautifulSoup:
+    """Adds the currency conversion boxes
+    to response of the search query
+
+    Args:
+        soup: Parsed search result
+        conversion_details: Dictionary of currency
+        related information
+
+    Returns:
+        BeautifulSoup
+    """
+    # Element before which the code will be changed
+    # (This is the 'disclaimer' link)
+    element1 = soup.find('a', {'href': 'https://g.co/gfd'})
+
+    while 'class' not in element1.attrs or \
+            'nXE3Ob' not in element1.attrs['class']:
+        element1 = element1.parent
+
+    # Creating the conversion factor
+    conversion_factor = (conversion_details['currencyValue1'] /
+                         conversion_details['currencyValue2'])
+
+    # Creating a new div for the input boxes
+    conversion_box = soup.new_tag('div')
+    conversion_box['class'] = 'conversion_box'
+
+    # Currency to be converted from
+    input_box1 = soup.new_tag('input')
+    input_box1['id'] = 'cb1'
+    input_box1['type'] = 'number'
+    input_box1['class'] = 'cb'
+    input_box1['value'] = conversion_details['currencyValue1']
+    input_box1['oninput'] = f'convert(1, 2, {1 / conversion_factor})'
+
+    label_box1 = soup.new_tag('label')
+    label_box1['for'] = 'cb1'
+    label_box1['class'] = 'cb_label'
+    label_box1.append(conversion_details['currencyLabel1'])
+
+    br = soup.new_tag('br')
+
+    # Currency to be converted to
+    input_box2 = soup.new_tag('input')
+    input_box2['id'] = 'cb2'
+    input_box2['type'] = 'number'
+    input_box2['class'] = 'cb'
+    input_box2['value'] = conversion_details['currencyValue2']
+    input_box2['oninput'] = f'convert(2, 1, {conversion_factor})'
+
+    label_box2 = soup.new_tag('label')
+    label_box2['for'] = 'cb2'
+    label_box2['class'] = 'cb_label'
+    label_box2.append(conversion_details['currencyLabel2'])
+
+    conversion_box.append(input_box1)
+    conversion_box.append(label_box1)
+    conversion_box.append(br)
+    conversion_box.append(input_box2)
+    conversion_box.append(label_box2)
+
+    element1.insert_before(conversion_box)
+    return soup
+
+
+def get_tabs_content(tabs: dict,
+                     full_query: str,
+                     search_type: str,
+                     translation: dict) -> dict:
+    """Takes the default tabs content and updates it according to the query.
+
+    Args:
+        tabs: The default content for the tabs
+        full_query: The original search query
+        search_type: The current search_type
+        translation: The translation to get the names of the tabs
+
+    Returns:
+        dict: contains the name, the href and if the tab is selected or not
+    """
+    tabs = copy.deepcopy(tabs)
+    for tab_id, tab_content in tabs.items():
+        # update name to desired language
+        if tab_id in translation:
+            tab_content['name'] = translation[tab_id]
+
+        # update href with query
+        query = full_query.replace(f'&tbm={search_type}', '')
+
+        if tab_content['tbm'] is not None:
+            query = f"{query}&tbm={tab_content['tbm']}"
+
+        tab_content['href'] = tab_content['href'].format(query=query)
+
+        # update if selected tab (default all tab is selected)
+        if tab_content['tbm'] == search_type:
+            tabs['all']['selected'] = False
+            tab_content['selected'] = True
+    return tabs
