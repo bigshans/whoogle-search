@@ -28,6 +28,10 @@ def gen_bangs_json(bangs_file: str) -> None:
     bangs_data = {}
 
     for row in data:
+        if row['t'] == 'zhihu':
+            row['u'] = 'https://www.sogou.com/sogou?ie=utf8&insite=zhihu.com&query={{{s}}}'
+
+    for row in data:
         bang_command = '!' + row['t']
         bangs_data[bang_command] = {
             'url': row['u'].replace('{{{s}}}', '{}'),
