@@ -200,7 +200,11 @@ def session_check(session_id):
         req = PreparedRequest()
         req.prepare_url(follow_url, {'cookies_disabled': 1})
         session.pop('_permanent', None)
-        return redirect(req.url, code=307)
+        url_base = app.config['WHOOGLE_CONFIG_URL']
+        if url_base:
+            return redirect(req.url, code=307)
+        new_url = url_base + str.join(req.url.split('/')[3:], '/')
+        return redirect(new_url, code=307)
 
 
 @app.route('/', methods=['GET'])
