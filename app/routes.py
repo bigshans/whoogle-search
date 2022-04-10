@@ -126,22 +126,22 @@ def before_request_func():
 
         # Skip checking for session on any searches that don't
         # require a valid session
-        if (not Endpoint.autocomplete.in_path(request.path) and
-                not Endpoint.healthz.in_path(request.path) and
-                not Endpoint.opensearch.in_path(request.path)):
-            url_base = os.getenv('WHOOGLE_CONFIG_URL', '')
-            if url_base == '':
-                return redirect(url_for(
-                    'session_check',
-                    session_id=session['uuid'],
-                    follow=get_request_url(request.url)), code=307)
-            new_url = '' if request.url is not None else url_base + str.join(request.url.split('/')[3:], '/')
-            return redirect(url_for(
-                'session_check',
-                session_id=session['uuid'],
-                follow=get_request_url(new_url)), code=307)
-        else:
-            g.user_config = Config(**session['config'])
+        #  if (not Endpoint.autocomplete.in_path(request.path) and
+                #  not Endpoint.healthz.in_path(request.path) and
+                #  not Endpoint.opensearch.in_path(request.path)):
+            #  url_base = os.getenv('WHOOGLE_CONFIG_URL', '')
+            #  if url_base == '':
+                #  return redirect(url_for(
+                    #  'session_check',
+                    #  session_id=session['uuid'],
+                    #  follow=get_request_url(request.url)), code=307)
+            #  new_url = '' if request.url is not None else url_base + str.join(request.url.split('/')[3:], '/')
+            #  return redirect(url_for(
+                #  'session_check',
+                #  session_id=session['uuid'],
+                #  follow=get_request_url(new_url)), code=307)
+        #  else:
+        g.user_config = Config(**session['config'])
     elif 'cookies_disabled' not in request.args:
         # Set session as permanent
         session.permanent = True
