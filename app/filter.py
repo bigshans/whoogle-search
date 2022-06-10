@@ -1,17 +1,13 @@
-from app.models.config import Config
-from app.models.endpoint import Endpoint
-from app.models.g_classes import GClasses
-from app.request import VALID_PARAMS, MAPS_URL
-from app.utils.misc import read_config_bool
-from app.utils.results import *
+import cssutils
 from bs4 import BeautifulSoup
 from bs4.element import ResultSet, Tag
 from cryptography.fernet import Fernet
 from flask import render_template
-import re
-import urllib.parse as urlparse
-from urllib.parse import parse_qs
-import os
+
+from app.models.g_classes import GClasses
+from app.request import VALID_PARAMS, MAPS_URL
+from app.utils.misc import get_abs_url, read_config_bool
+from app.utils.results import *
 
 minimal_mode_sections = ['Top stories', 'Images', 'People also ask']
 unsupported_g_pages = [
@@ -53,17 +49,53 @@ def clean_query(query: str) -> str:
     return query[:query.find('-site:')] if '-site:' in query else query
 
 
+def clean_css(css: str, page_url: str) -> str:
+    """Removes all remote URLs from a CSS string.
+
+    Args:
+        css: The CSS string
+
+    Returns:
+        str: The filtered CSS, with URLs proxied through Whoogle
+    """
+    sheet = cssutils.parseString(css)
+    urls = cssutils.getUrls(sheet)
+
+    for url in urls:
+        abs_url = get_abs_url(url, page_url)
+        if abs_url.startswith('data:'):
+            continue
+        css = css.replace(
+            url,
+            f'{Endpoint.element}?type=image/png&url={abs_url}'
+        )
+
+    return css
+
+
 class Filter:
     # Limit used for determining if a result is a "regular" result or a list
     # type result (such as "people also asked", "related searches", etc)
     RESULT_CHILD_LIMIT = 7
 
-    def __init__(self, user_key: str, config: Config, mobile=False) -> None:
+    def __init__(
+            self,
+            user_key: str,
+            config: Config,
+            root_url='',
+            page_url='',
+            query='',
+            mobile=False) -> None:
         self.config = config
         self.mobile = mobile
         self.user_key = user_key
+        self.page_url = page_url
+        self.query = query
         self.main_divs = ResultSet('')
         self._elements = 0
+        self._av = set()
+
+        self.root_url = root_url[:-1] if root_url.endswith('/') else root_url
 
     def __getitem__(self, name):
         return getattr(self, name)
@@ -89,6 +121,7 @@ class Filter:
         self.remove_block_titles()
         self.remove_block_url()
         self.collapse_sections()
+        self.update_css(soup)
         self.update_styling(soup)
         self.remove_block_tabs(soup)
 
@@ -104,6 +137,8 @@ class Filter:
         input_form = soup.find('form')
         if input_form is not None:
             input_form['method'] = 'GET' if self.config.get_only else 'POST'
+            # Use a relative URI for submissions
+            input_form['action'] = 'search'
 
         # Ensure no extra scripts passed through
         for script in soup('script'):
@@ -264,7 +299,7 @@ class Filter:
                 # enabled
                 parent.decompose()
 
-    def update_element_src(self, element: Tag, mime: str) -> None:
+    def update_element_src(self, element: Tag, mime: str, attr='src') -> None:
         """Encrypts the original src of an element and rewrites the element src
         to use the "/element?src=" pass-through.
 
@@ -272,10 +307,12 @@ class Filter:
             None (The soup element is modified directly)
 
         """
-        src = element['src']
+        src = element[attr].split(' ')[0]
 
         if src.startswith('//'):
             src = 'https:' + src
+        elif src.startswith('data:'):
+            return
 
         if src.startswith(LOGO_URL):
             # Re-brand with Whoogle logo
@@ -283,15 +320,43 @@ class Filter:
                 render_template('logo.html'),
                 features='html.parser'))
             return
+        elif src.startswith(G_M_LOGO_URL):
+            # Re-brand with single-letter Whoogle logo
+            element['src'] = 'static/img/favicon/apple-icon.png'
+            element.parent['href'] = 'home'
+            return
         elif src.startswith(GOOG_IMG) or GOOG_STATIC in src:
             element['src'] = BLANK_B64
             return
 
-        element['src'] = f'{Endpoint.element}?url=' + self.encrypt_path(
-            src,
-            is_element=True) + '&type=' + urlparse.quote(mime)
+        element[attr] = f'{self.root_url}/{Endpoint.element}?url=' + (
+            self.encrypt_path(
+                src,
+                is_element=True
+            ) + '&type=' + urlparse.quote(mime)
+        )
+
+    def update_css(self, soup) -> None:
+        """Updates URLs used in inline styles to be proxied by Whoogle
+        using the /element endpoint.
+
+        Returns:
+            None (The soup element is modified directly)
+
+        """
+        # Filter all <style> tags
+        for style in soup.find_all('style'):
+            style.string = clean_css(style.string, self.page_url)
+
+        # TODO: Convert remote stylesheets to style tags and proxy all
+        # remote requests
+        # for link in soup.find_all('link', attrs={'rel': 'stylesheet'}):
+            # print(link)
 
     def update_styling(self, soup) -> None:
+        # Update CSS classes for result divs
+        soup = GClasses.replace_css_classes(soup)
+
         # Remove unnecessary button(s)
         for button in soup.find_all('button'):
             button.decompose()
@@ -345,8 +410,10 @@ class Filter:
             None (the tag is updated directly)
 
         """
+        link_netloc = urlparse.urlparse(link['href']).netloc
+
         # Remove any elements that direct to unsupported Google pages
-        if any(url in link['href'] for url in unsupported_g_pages):
+        if any(url in link_netloc for url in unsupported_g_pages):
             # FIXME: The "Shopping" tab requires further filtering (see #136)
             # Temporarily removing all links to that tab for now.
             parent = link.parent
@@ -362,10 +429,14 @@ class Filter:
         result_link = urlparse.urlparse(href)
         q = extract_q(result_link.query, href)
 
-        if q.startswith('/'):
+        if q.startswith('/') and q not in self.query:
             # Internal google links (i.e. mail, maps, etc) should still
             # be forwarded to Google
             link['href'] = 'https://google.com' + q
+        elif q.startswith('https://accounts.google.com'):
+            # Remove Sign-in link
+            link.decompose()
+            return
         elif '/search?q=' in href:
             # "li:1" implies the query should be interpreted verbatim,
             # which is accomplished by wrapping the query in double quotes
@@ -384,9 +455,12 @@ class Filter:
             # Strip unneeded arguments
             link['href'] = filter_link_args(q)
 
-            # Add no-js option
-            if self.config.nojs:
-                append_nojs(link)
+            # Add alternate viewing options for results,
+            # if the result doesn't already have an AV link
+            netloc = urlparse.urlparse(link['href']).netloc
+            if self.config.anon_view and netloc not in self._av:
+                self._av.add(netloc)
+                append_anon_view(link, self.config)
 
             if self.config.new_tab:
                 link['target'] = '_blank'
@@ -394,6 +468,17 @@ class Filter:
             if href.startswith(MAPS_URL):
                 # Maps links don't work if a site filter is applied
                 link['href'] = MAPS_URL + "?q=" + clean_query(q)
+            elif (href.startswith('/?') or href.startswith('/search?') or
+                  href.startswith('/imgres?')):
+                # make sure that tags can be clicked as relative URLs
+                link['href'] = href[1:]
+            elif href.startswith('/intl/'):
+                # do nothing, keep original URL for ToS
+                pass
+            elif href.startswith('/preferences'):
+                # there is no config specific URL, remove this
+                link.decompose()
+                return
             else:
                 link['href'] = href
 

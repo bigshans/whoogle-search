@@ -1,6 +1,8 @@
+from app.models.config import Config
 from app.models.endpoint import Endpoint
 from bs4 import BeautifulSoup, NavigableString
 import copy
+from flask import current_app
 import html
 import os
 import urllib.parse as urlparse
@@ -10,6 +12,7 @@ import re
 SKIP_ARGS = ['ref_src', 'utm']
 SKIP_PREFIX = ['//www.', '//mobile.', '//m.']
 GOOG_STATIC = 'www.gstatic.com'
+G_M_LOGO_URL = 'https://www.gstatic.com/m/images/icons/googleg.gif'
 GOOG_IMG = '/images/branding/searchlogo/1x/googlelogo'
 LOGO_URL = GOOG_IMG + '_desk'
 BLANK_B64 = ('data:image/png;base64,'
@@ -183,9 +186,33 @@ def append_nojs(result: BeautifulSoup) -> None:
 
     """
     nojs_link = BeautifulSoup(features='html.parser').new_tag('a')
-    nojs_link['href'] = f'/{Endpoint.window}?location=' + result['href']
+    nojs_link['href'] = f'{Endpoint.window}?nojs=1&location=' + result['href']
     nojs_link.string = ' NoJS Link'
     result.append(nojs_link)
+
+
+def append_anon_view(result: BeautifulSoup, config: Config) -> None:
+    """Appends an 'anonymous view' for a search result, where all site
+    contents are viewed through Whoogle as a proxy.
+
+    Args:
+        result: The search result to append an anon view link to
+        nojs: Remove Javascript from Anonymous View
+
+    Returns:
+        None
+
+    """
+    av_link = BeautifulSoup(features='html.parser').new_tag('a')
+    nojs = 'nojs=1' if config.nojs else 'nojs=0'
+    location = f'location={result["href"]}'
+    av_link['href'] = f'{Endpoint.window}?{nojs}&{location}'
+    translation = current_app.config['TRANSLATIONS'][
+       config.get_localization_lang()
+    ]
+    av_link.string = f'{translation["anon-view"]}'
+    av_link['class'] = 'anon-view'
+    result.append(av_link)
 
 
 def add_ip_card(html_soup: BeautifulSoup, ip: str) -> BeautifulSoup:
@@ -200,26 +227,28 @@ def add_ip_card(html_soup: BeautifulSoup, ip: str) -> BeautifulSoup:
         BeautifulSoup
 
     """
-    # HTML IP card tag
-    ip_tag = html_soup.new_tag('div')
-    ip_tag['class'] = 'ZINbbc xpd O9g5cc uUPGi'
+    main_div = html_soup.select_one('#main')
+    if main_div:
+        # HTML IP card tag
+        ip_tag = html_soup.new_tag('div')
+        ip_tag['class'] = 'ZINbbc xpd O9g5cc uUPGi'
 
-    # For IP Address html tag
-    ip_address = html_soup.new_tag('div')
-    ip_address['class'] = 'kCrYT ip-address-div'
-    ip_address.string = ip
+        # For IP Address html tag
+        ip_address = html_soup.new_tag('div')
+        ip_address['class'] = 'kCrYT ip-address-div'
+        ip_address.string = ip
 
-    # Text below the IP address
-    ip_text = html_soup.new_tag('div')
-    ip_text.string = 'Your public IP address'
-    ip_text['class'] = 'kCrYT ip-text-div'
+        # Text below the IP address
+        ip_text = html_soup.new_tag('div')
+        ip_text.string = 'Your public IP address'
+        ip_text['class'] = 'kCrYT ip-text-div'
 
-    # Adding all the above html tags to the IP card
-    ip_tag.append(ip_address)
-    ip_tag.append(ip_text)
+        # Adding all the above html tags to the IP card
+        ip_tag.append(ip_address)
+        ip_tag.append(ip_text)
 
-    # Insert the element at the top of the result list
-    html_soup.select_one('#main').insert_before(ip_tag)
+        # Insert the element at the top of the result list
+        main_div.insert_before(ip_tag)
     return html_soup
 
 
