@@ -297,7 +297,8 @@ class Request:
         cookies = {
             'CONSENT': 'YES+cb.{:d}{:02d}{:02d}-17-p0.de+F+678'.format(
                 now.year, now.month, now.day
-            )
+            ),
+            'NID': '2GvBAmLhXLbTsUB_ZeNkaqsYKF7OqafDDiZ6dyojZa5vk4lvSo45ffZmtADJNUV64xlOcoRw-kdOGmYtP_O9ve82e-tSabTKLeRIEJ4GWgYM'
         }
 
         # Validate Tor conn and request new identity if the last one failed
