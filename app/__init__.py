@@ -43,7 +43,7 @@ if os.getenv('HTTPS_ONLY'):
     app.config['SESSION_COOKIE_NAME'] = '__Secure-session'
     app.config['SESSION_COOKIE_SECURE'] = True
 
-app.config['VERSION_NUMBER'] = '0.7.3'
+app.config['VERSION_NUMBER'] = '0.7.4'
 app.config['APP_ROOT'] = os.getenv(
     'APP_ROOT',
     os.path.dirname(os.path.abspath(__file__)))
@@ -78,6 +78,7 @@ app.config['CONFIG_DISABLE'] = read_config_bool('WHOOGLE_CONFIG_DISABLE')
 app.config['SESSION_FILE_DIR'] = os.path.join(
     app.config['CONFIG_PATH'],
     'session')
+app.config['MAX_SESSION_SIZE'] = 4000  # Sessions won't exceed 4KB
 app.config['BANG_PATH'] = os.getenv(
     'CONFIG_VOLUME',
     os.path.join(app.config['STATIC_FOLDER'], 'bangs'))

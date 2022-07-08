@@ -134,7 +134,16 @@ def get_site_alt(link: str) -> str:
         if not hostname or site_key not in hostname or not SITE_ALTS[site_key]:
             continue
 
-        link = link.replace(hostname, SITE_ALTS[site_key])
+        # Wikipedia -> Wikiless replacements require the subdomain (if it's
+        # a 2-char language code) to be passed as a URL param to Wikiless
+        # in order to preserve the language setting.
+        url_params = ''
+        if 'wikipedia' in hostname:
+            subdomain = hostname.split('.')[0]
+            if len(subdomain) == 2:
+                url_params = f'?lang={subdomain}'
+
+        link = link.replace(hostname, SITE_ALTS[site_key]) + url_params
         for prefix in SKIP_PREFIX:
             link = link.replace(prefix, '//')
         break
@@ -267,7 +276,10 @@ def check_currency(response: str) -> dict:
     if currency_link:
         while 'class' not in currency_link.attrs or \
                 'ZINbbc' not in currency_link.attrs['class']:
-            currency_link = currency_link.parent
+            if currency_link.parent:
+                currency_link = currency_link.parent
+            else:
+                return {}
         currency_link = currency_link.find_all(class_='BNeawe')
         currency1 = currency_link[0].text
         currency2 = currency_link[1].text
