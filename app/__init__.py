@@ -13,8 +13,12 @@ from stem import Signal
 import threading
 from dotenv import load_dotenv
 
+from werkzeug.middleware.proxy_fix import ProxyFix
+
 app = Flask(__name__, static_folder=os.path.dirname(
     os.path.abspath(__file__)) + '/static')
+
+app.wsgi_app = ProxyFix(app.wsgi_app)
 
 # Load .env file if enabled
 if os.getenv('WHOOGLE_DOTENV', ''):
@@ -22,16 +26,24 @@ if os.getenv('WHOOGLE_DOTENV', ''):
     load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              dotenv_path))
 
+# Session values
+# NOTE: SESSION_COOKIE_SAMESITE must be set to 'lax' to allow the user's
+# previous session to persist when accessing the instance from an external
+# link. Setting this value to 'strict' causes Whoogle to revalidate a new
+# session, and fail, resulting in cookies being disabled.
+#
+# This could be re-evaluated if Whoogle ever switches to client side
+# configuration instead.
 app.default_key = generate_user_key()
 app.config['SECRET_KEY'] = os.urandom(32)
 app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_COOKIE_SAMESITE'] = 'strict'
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 if os.getenv('HTTPS_ONLY'):
     app.config['SESSION_COOKIE_NAME'] = '__Secure-session'
     app.config['SESSION_COOKIE_SECURE'] = True
 
-app.config['VERSION_NUMBER'] = '0.7.1'
+app.config['VERSION_NUMBER'] = '0.7.4'
 app.config['APP_ROOT'] = os.getenv(
     'APP_ROOT',
     os.path.dirname(os.path.abspath(__file__)))
@@ -66,6 +78,7 @@ app.config['CONFIG_DISABLE'] = read_config_bool('WHOOGLE_CONFIG_DISABLE')
 app.config['SESSION_FILE_DIR'] = os.path.join(
     app.config['CONFIG_PATH'],
     'session')
+app.config['MAX_SESSION_SIZE'] = 4000  # Sessions won't exceed 4KB
 app.config['BANG_PATH'] = os.getenv(
     'CONFIG_VOLUME',
     os.path.join(app.config['STATIC_FOLDER'], 'bangs'))

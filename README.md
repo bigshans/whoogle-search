@@ -30,6 +30,8 @@ Contents
     2. [Prevent Downtime (Heroku Only)](#prevent-downtime-heroku-only)
     3. [Manual HTTPS Enforcement](#https-enforcement)
     4. [Using with Firefox Containers](#using-with-firefox-containers)
+    5. [Reverse Proxying](#reverse-proxying)
+        1. [Nginx](#nginx)
 7. [Contributing](#contributing)
 8. [FAQ](#faq)
 9. [Public Instances](#public-instances)
@@ -232,6 +234,51 @@ sudo systemctl enable whoogle
 sudo systemctl start whoogle
 ```
 
+#### Tor Configuration *optional*
+If routing your request through Tor you will need to make the following adjustments.
+Due to the nature of interacting with Google through Tor we will need to be able to send signals to Tor and therefore authenticate with it.
+
+There are two authentication methods, password and cookie. You will need to make changes to your torrc:
+  * Cookie
+    1. Uncomment or add the following lines in your torrc:
+       - `ControlPort 9051` 
+       - `CookieAuthentication 1`
+       - `DataDirectoryGroupReadable 1`
+       - `CookieAuthFileGroupReadable 1`
+    
+    2. Make the tor auth cookie readable:
+       - This is assuming that you are using a dedicated user to run whoogle. If you are using a different user replace `whoogle` with that user.
+       
+       1. `chmod tor:whoogle /var/lib/tor`
+       2. `chmod tor:whoogle /var/lib/tor/control_auth_cookie`
+    
+    3. Restart the tor service:
+       - `systemctl restart tor`
+     
+    4. Set the Tor environment variable to 1, `WHOOGLE_CONFIG_TOR`. Refer to the [Environment Variables](#environment-variables) section for more details.
+       - This may be added in the systemd unit file or env file `WHOOGLE_CONFIG_TOR=1`
+  
+  * Password
+    1. Run this command:
+       - `tor --hash-password {Your Password Here}`; put your password in place of `{Your Password Here}`.
+       - Keep the output of this command, you will be placing it in your torrc.
+       - Keep the password input of this command, you will be using it later.
+    
+    2. Uncomment or add the following lines in your torrc:
+       - `ControlPort 9051` 
+       - `HashedControlPassword {Place output here}`; put the output of the previous command in place of `{Place output here}`.
+     
+    3. Now take the password from the first step and place it in the control.conf file within the whoogle working directory, ie. [misc/tor/control.conf](misc/tor/control.conf)
+       - If you want to place your password file in a different location set this location with the `WHOOGLE_TOR_CONF` environment variable. Refer to the [Environment Variables](#environment-variables) section for more details.
+    
+    4. Heavily restrict access to control.conf to only be readable by the user running whoogle:
+       - `chmod 400 control.conf`
+    
+    5. Finally set the Tor environment variable and use password variable to 1, `WHOOGLE_CONFIG_TOR` and `WHOOGLE_TOR_USE_PASS`. Refer to the [Environment Variables](#environment-variables) section for more details.
+       - These may be added to the systemd unit file or env file:
+          - `WHOOGLE_CONFIG_TOR=1`
+          - `WHOOGLE_TOR_USE_PASS=1`
+
 ### G) Manual (Docker)
 1. Ensure the Docker daemon is running, and is accessible by your user account
   - To add user permissions, you can execute `sudo usermod -aG docker yourusername`
@@ -321,6 +368,7 @@ There are a few optional environment variables available for customizing a Whoog
 
 | Variable             | Description                                                                               |
 | -------------------- | ----------------------------------------------------------------------------------------- |
+| WHOOGLE_URL_PREFIX   | The URL prefix to use for the whoogle instance (i.e. "/whoogle")                          |
 | WHOOGLE_DOTENV       | Load environment variables in `whoogle.env`                                               |
 | WHOOGLE_USER         | The username for basic auth. WHOOGLE_PASS must also be set if used.                       |
 | WHOOGLE_PASS         | The password for basic auth. WHOOGLE_USER must also be set if used.                       |
@@ -336,12 +384,14 @@ There are a few optional environment variables available for customizing a Whoog
 | WHOOGLE_ALT_RD       | The reddit.com alternative to use when site alternatives are enabled in the config.       |
 | WHOOGLE_ALT_TL       | The Google Translate alternative to use. This is used for all "translate ____" searches.  |
 | WHOOGLE_ALT_MD       | The medium.com alternative to use when site alternatives are enabled in the config.       |
-| WHOOGLE_ALT_IMG       | The imgur.com alternative to use when site alternatives are enabled in the config.       |
-| WHOOGLE_ALT_WIKI       | The wikipedia.com alternative to use when site alternatives are enabled in the config.       |
+| WHOOGLE_ALT_IMG      | The imgur.com alternative to use when site alternatives are enabled in the config.        |
+| WHOOGLE_ALT_WIKI     | The wikipedia.com alternative to use when site alternatives are enabled in the config.    |
 | WHOOGLE_AUTOCOMPLETE | Controls visibility of autocomplete/search suggestions. Default on -- use '0' to disable  |
 | WHOOGLE_MINIMAL      | Remove everything except basic result cards from all search queries.                      |
 | WHOOGLE_CSP          | Sets a default set of 'Content-Security-Policy' headers                                   |
-| WHOOGLE_RESULTS_PER_PAGE          | Set the number of results per page                                   |
+| WHOOGLE_RESULTS_PER_PAGE          | Set the number of results per page                                           |
+| WHOOGLE_TOR_USE_PASS | Use password authentication for tor control port. |
+| WHOOGLE_TOR_CONF | The absolute path to the config file containing the password for the tor control port. Default: ./misc/tor/control.conf WHOOGLE_TOR_PASS must be 1 for this to work.|
 
 ### Config Environment Variables
 These environment variables allow setting default config values, but can be overwritten manually by using the home page config menu. These allow a shortcut for destroying/rebuilding an instance to the same config state every time.
@@ -443,6 +493,31 @@ Unfortunately, Firefox Containers do not currently pass through `POST` requests 
 4. Restart Firefox
 5. Navigate to Whoogle instance and [re-add the engine](#set-whoogle-as-your-primary-search-engine)
 
+### Reverse Proxying
+
+#### Nginx
+
+Here is a sample Nginx config for Whoogle:
+
+```
+server {
+	server_name your_domain_name.com;
+	access_log /dev/null;
+	error_log /dev/null;
+	
+	location / {
+	    proxy_set_header X-Real-IP $remote_addr;
+	    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+	    proxy_set_header X-Forwarded-Proto $scheme;
+	    proxy_set_header Host $host;
+	    proxy_set_header X-NginX-Proxy true;
+	    proxy_pass http://localhost:5000;
+	}
+}
+```
+
+You can then add SSL support using LetsEncrypt by following a guide such as [this one](https://www.nginx.com/blog/using-free-ssltls-certificates-from-lets-encrypt-with-nginx/).
+
 ## Contributing
 
 Under the hood, Whoogle is a basic Flask app with the following structure:
@@ -513,15 +588,17 @@ A lot of the app currently piggybacks on Google's existing support for fetching 
 | Website | Country | Language | Cloudflare |
 |-|-|-|-|
 | [https://search.albony.xyz](https://search.albony.xyz/) | 🇮🇳 IN | Multi-choice |  |
-| [https://search.garudalinux.org](https://search.garudalinux.org) | 🇩🇪 DE | Multi-choice |  |
-| [https://whooglesearch.net](https://whooglesearch.net) | 🇩🇪 DE | Spanish |  |
-| [https://s.alefvanoon.xyz](https://s.alefvanoon.xyz) | 🇺🇸 US | Multi-choice | ✅ |
+| [https://search.garudalinux.org](https://search.garudalinux.org) | 🇫🇮 FI | Multi-choice | ✅ |
+| [https://search.dr460nf1r3.org](https://search.dr460nf1r3.org) | 🇩🇪 DE | Multi-choice | ✅ |
+| [https://s.tokhmi.xyz](https://s.tokhmi.xyz) | 🇺🇸 US | Multi-choice | ✅ |
 | [https://www.whooglesearch.ml](https://www.whooglesearch.ml) | 🇺🇸 US | English | |
 | [https://search.sethforprivacy.com](https://search.sethforprivacy.com) | 🇩🇪 DE | English | |
 | [https://whoogle.dcs0.hu](https://whoogle.dcs0.hu) | 🇭🇺 HU | Multi-choice | |
 | [https://whoogle.esmailelbob.xyz](https://whoogle.esmailelbob.xyz) | 🇨🇦 CA | Multi-choice | |
 | [https://gowogle.voring.me](https://gowogle.voring.me) | 🇺🇸 US | Multi-choice | |
 | [https://whoogle.lunar.icu](https://whoogle.lunar.icu) | 🇩🇪 DE | Multi-choice | ✅ |
+| [https://whoogle.privacydev.net](https://whoogle.privacydev.net) | 🇺🇸 US | Multi-choice | |
+| [https://search.wef.lol](https://search.wef.lol) | 🇮🇸 IC | Multi-choice | |
 
 
 

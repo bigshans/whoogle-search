@@ -3,6 +3,7 @@ from flask import Request
 import hashlib
 import os
 from requests import exceptions, get
+from urllib.parse import urlparse
 
 
 def gen_file_hash(path: str, static_file: str) -> str:
@@ -34,6 +35,15 @@ def get_request_url(url: str) -> str:
     return url
 
 
+def get_proxy_host_url(r: Request, default: str) -> str:
+    scheme = r.headers.get('X-Forwarded-Proto', 'http')
+    http_host = r.headers.get('X-Forwarded-Host')
+    if http_host:
+        return f'{scheme}://{http_host}/'
+
+    return default
+
+
 def check_for_update(version_url: str, current: str) -> int:
     # Check for the latest version of Whoogle
     try:
@@ -47,3 +57,14 @@ def check_for_update(version_url: str, current: str) -> int:
         has_update = ''
 
     return has_update
+
+
+def get_abs_url(url, page_url):
+    # Creates a valid absolute URL using a partial or relative URL
+    if url.startswith('//'):
+        return f'https:{url}'
+    elif url.startswith('/'):
+        return f'{urlparse(page_url).netloc}{url}'
+    elif url.startswith('./'):
+        return f'{page_url}{url[2:]}'
+    return url
