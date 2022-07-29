@@ -104,29 +104,18 @@ Provides:
 
 ### C) [Fly.io](https://fly.io)
 
-You will need a [Fly.io](https://fly.io) account to do this. Fly requires a credit card to deploy anything, but you can have up to 3 shared-CPU VMs running full-time each month for free.
+You will need a **PAID** [Fly.io](https://fly.io) account to deploy Whoogle.
 
-#### Install the CLI:
+#### Install the CLI: https://fly.io/docs/hands-on/installing/
 
-```bash
-curl -L https://fly.io/install.sh | sh
-```
-
-#### Deploy your app
+#### Deploy the app
 
 ```bash
-fly apps create --org personal --port 5000
-# Choose a name and the Image builder
-# Enter `benbusby/whoogle-search:latest` as the image name
-fly deploy
+flyctl auth login
+flyctl launch --image benbusby/whoogle-search:latest
 ```
 
 Your app is now available at `https://<app-name>.fly.dev`.
-
-You can customize the `fly.toml`:
-- Remove the non-https service
-- Add environment variables under the `[env]` key
-  - Use `fly secrets set NAME=value` for more sensitive values like `WHOOGLE_PASS` and `WHOOGLE_PROXY_PASS`.
 
 ### D) [pipx](https://github.com/pipxproject/pipx#install-pipx)
 Persistent install:
@@ -538,7 +527,7 @@ Under the hood, Whoogle is a basic Flask app with the following structure:
     - `search.html`: An iframe-able search page
     - `logo.html`: A template consisting mostly of the Whoogle logo as an SVG (separated to help keep `index.html` a bit cleaner)
     - `opensearch.xml`: A template used for supporting [OpenSearch](https://developer.mozilla.org/en-US/docs/Web/OpenSearch).
-    - `imageresults.html`: An "exprimental" template used for supporting the "Full Size" image feature on desktop.
+    - `imageresults.html`: An "experimental" template used for supporting the "Full Size" image feature on desktop.
   - `static/<css|js>`
     - CSS/Javascript files, should be self-explanatory
   - `static/settings`
