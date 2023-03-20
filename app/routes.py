@@ -19,10 +19,11 @@ from app.utils.misc import get_proxy_host_url
 from app.filter import Filter
 from app.utils.misc import read_config_bool, get_client_ip, get_request_url, \
     check_for_update
-from app.utils.results import add_ip_card, bold_search_terms,\
+from app.utils.widgets import *
+from app.utils.results import bold_search_terms,\
     add_currency_card, check_currency, get_tabs_content
 from app.utils.search import Search, needs_https, has_captcha
-from app.utils.session import generate_user_key, valid_user_session
+from app.utils.session import valid_user_session
 from bs4 import BeautifulSoup as bsoup
 from flask import jsonify, make_response, request, redirect, render_template, \
     send_file, session, url_for, g
@@ -47,6 +48,14 @@ def get_search_name(tbm):
 def auth_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
+        # do not ask password if cookies already present
+        if (
+            valid_user_session(session)
+            and 'cookies_disabled' not in request.args
+            and session['auth']
+        ):
+            return f(*args, **kwargs)
+
         auth = request.authorization
 
         # Skip if username/password not set
@@ -56,6 +65,7 @@ def auth_required(f):
                 auth
                 and whoogle_user == auth.username
                 and whoogle_pass == auth.password):
+            session['auth'] = True
             return f(*args, **kwargs)
         else:
             return make_response('Not logged in', 401, {
@@ -67,12 +77,16 @@ def auth_required(f):
 def session_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if (valid_user_session(session) and
-                'cookies_disabled' not in request.args):
-            g.session_key = session['key']
-        else:
+        if not valid_user_session(session):
             session.pop('_permanent', None)
-            g.session_key = app.default_key
+
+        # Note: This sets all requests to use the encryption key determined per
+        # instance on app init. This can be updated in the future to use a key
+        # that is unique for their session (session['key']) but this should use
+        # a config setting to enable the session based key. Otherwise there can
+        # be problems with searches performed by users with cookies blocked if
+        # a session based key is always used.
+        g.session_key = app.enc_key
 
         # Clear out old sessions
         invalid_sessions = []
@@ -113,6 +127,7 @@ def session_required(f):
 @app.before_request
 def before_request_func():
     global bang_json
+    session.permanent = True
 
     # Check for latest version if needed
     now = datetime.now()
@@ -126,47 +141,21 @@ def before_request_func():
         request.args if request.method == 'GET' else request.form
     )
 
-    # Skip pre-request actions if verifying session
-    if '/session' in request.path and not valid_user_session(session):
-        return
-
     default_config = json.load(open(app.config['DEFAULT_CONFIG'])) \
         if os.path.exists(app.config['DEFAULT_CONFIG']) else {}
 
     # Generate session values for user if unavailable
-    if (not valid_user_session(session) and
-            'cookies_disabled' not in request.args):
+    if not valid_user_session(session):
         session['config'] = default_config
         session['uuid'] = str(uuid.uuid4())
-        session['key'] = generate_user_key()
+        session['key'] = app.enc_key
+        session['auth'] = False
 
-        # Skip checking for session on any searches that don't
-        # require a valid session
-        #  if (not Endpoint.autocomplete.in_path(request.path) and
-                #  not Endpoint.healthz.in_path(request.path) and
-                #  not Endpoint.opensearch.in_path(request.path)):
-            #  url_base = os.getenv('WHOOGLE_CONFIG_URL', '')
-            #  if url_base == '':
-                #  return redirect(url_for(
-                    #  'session_check',
-                    #  session_id=session['uuid'],
-                    #  follow=get_request_url(request.url)), code=307)
-            #  new_url = '' if request.url is not None else url_base + str.join(request.url.split('/')[3:], '/')
-            #  return redirect(url_for(
-                #  'session_check',
-                #  session_id=session['uuid'],
-                #  follow=get_request_url(new_url)), code=307)
-        #  else:
-        g.user_config = Config(**session['config'])
-    elif 'cookies_disabled' not in request.args:
-        # Set session as permanent
-        session.permanent = True
-        app.permanent_session_lifetime = timedelta(days=365)
-        g.user_config = Config(**session['config'])
-    else:
-        # User has cookies disabled, fall back to immutable default config
-        session.pop('_permanent', None)
-        g.user_config = Config(**default_config)
+    # Establish config values per user session
+    g.user_config = Config(**session['config'])
+
+    # Update user config if specified in search args
+    g.user_config = g.user_config.from_params(g.request_params)
 
     if not g.user_config.url:
         g.user_config.url = get_request_url(request.url_root)
@@ -213,23 +202,6 @@ def healthz():
     return ''
 
 
-@app.route(f'/{Endpoint.session}/<session_id>', methods=['GET', 'PUT', 'POST'])
-def session_check(session_id):
-    if 'uuid' in session and session['uuid'] == session_id:
-        session['valid'] = True
-        return redirect(request.args.get('follow'), code=307)
-    else:
-        follow_url = request.args.get('follow')
-        req = PreparedRequest()
-        req.prepare_url(follow_url, {'cookies_disabled': 1})
-        session.pop('_permanent', None)
-        url_base = os.getenv('WHOOGLE_CONFIG_URL', '')
-        if url_base == '':
-            return redirect(req.url, code=307)
-        new_url = url_base + str.join(req.url.split('/')[3:], '/')
-        return redirect(new_url, code=307)
-
-
 @app.route('/', methods=['GET'])
 @app.route(f'/{Endpoint.home}', methods=['GET'])
 @auth_required
@@ -244,6 +216,7 @@ def index():
                            has_update=app.config['HAS_UPDATE'],
                            languages=app.config['LANGUAGES'],
                            countries=app.config['COUNTRIES'],
+                           time_periods=app.config['TIME_PERIODS'],
                            themes=app.config['THEMES'],
                            autocomplete_enabled=autocomplete_enabled,
                            translation=app.config['TRANSLATIONS'][
@@ -254,8 +227,7 @@ def index():
                                dark=g.user_config.dark),
                            config_disabled=(
                                    app.config['CONFIG_DISABLE'] or
-                                   not valid_user_session(session) or
-                                   'cookies_disabled' in request.args),
+                                   not valid_user_session(session)),
                            config=g.user_config,
                            tor_available=int(os.environ.get('TOR_AVAILABLE')),
                            version_number=app.config['VERSION_NUMBER'])
@@ -322,14 +294,10 @@ def autocomplete():
         g.user_request.autocomplete(q) if not g.user_config.tor else []
     ])
 
-
 @app.route(f'/{Endpoint.search}', methods=['GET', 'POST'])
 @session_required
 @auth_required
 def search():
-    # Update user config if specified in search args
-    g.user_config = g.user_config.from_params(g.request_params)
-
     search_util = Search(request, g.user_config, g.session_key)
     query = search_util.new_search_query()
 
@@ -360,8 +328,16 @@ def search():
     translation = app.config['TRANSLATIONS'][localization_lang]
     translate_to = localization_lang.replace('lang_', '')
 
+    # removing st-card to only use whoogle time selector
+    soup = bsoup(response, "html.parser");
+    for x in soup.find_all(attrs={"id": "st-card"}):
+        x.replace_with("")
+
+    response = str(soup)
+
     # Return 503 if temporarily blocked by captcha
     if has_captcha(str(response)):
+        app.logger.error('503 (CAPTCHA)')
         return render_template(
             'error.html',
             blocked=True,
@@ -370,25 +346,36 @@ def search():
             farside='https://farside.link',
             config=g.user_config,
             query=urlparse.unquote(query),
-            params=g.user_config.to_params()), 503
+            params=g.user_config.to_params(keys=['preferences'])), 503
+
     response = bold_search_terms(response, query)
 
-    # Feature to display IP address
-    if search_util.check_kw_ip():
+    # check for widgets and add if requested
+    if search_util.widget != '':
         html_soup = bsoup(str(response), 'html.parser')
-        response = add_ip_card(html_soup, get_client_ip(request))
+        if search_util.widget == 'ip':
+            response = add_ip_card(html_soup, get_client_ip(request))
+        elif search_util.widget == 'calculator' and not 'nojs' in request.args:
+            response = add_calculator_card(html_soup)
 
     # Update tabs content
     tabs = get_tabs_content(app.config['HEADER_TABS'],
                             search_util.full_query,
                             search_util.search_type,
+                            g.user_config.preferences,
                             translation)
 
     # Feature to display currency_card
+    # Since this is determined by more than just the
+    # query is it not defined as a standard widget
     conversion = check_currency(str(response))
     if conversion:
         html_soup = bsoup(str(response), 'html.parser')
         response = add_currency_card(html_soup, conversion)
+
+    preferences = g.user_config.preferences
+    home_url = f"home?preferences={preferences}" if preferences else "home"
+    cleanresponse = str(response).replace("andlt;","&lt;").replace("andgt;","&gt;")
 
     return render_template(
         'display.html',
@@ -409,16 +396,21 @@ def search():
         is_translation=any(
             _ in query.lower() for _ in [translation['translate'], 'translate']
         ) and not search_util.search_type,  # Standard search queries only
-        response=response,
+        response=cleanresponse,
         version_number=app.config['VERSION_NUMBER'],
         search_header=render_template(
             'header.html',
+            home_url=home_url,
             config=g.user_config,
+            translation=translation,
+            languages=app.config['LANGUAGES'],
+            countries=app.config['COUNTRIES'],
+            time_periods=app.config['TIME_PERIODS'],
             logo=render_template('logo.html', dark=g.user_config.dark),
             query=urlparse.unquote(query),
             search_type=search_util.search_type,
             mobile=g.user_request.mobile,
-            tabs=tabs))
+            tabs=tabs)).replace("  ", "")
 
 
 # @app.route(f'/{Endpoint.config}', methods=['GET', 'POST', 'PUT'])
@@ -563,6 +555,11 @@ def window():
             g.user_config.get_localization_lang()
         ]
     )
+
+
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template('error.html', error_message=str(e)), 404
 
 
 def run_app() -> None:
