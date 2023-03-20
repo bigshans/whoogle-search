@@ -14,7 +14,7 @@ RUN pip install --prefix /install --no-warn-script-location --no-cache-dir -r re
 
 FROM python:3.11.0a5-alpine
 
-RUN apk add --update --no-cache tor curl openrc
+RUN apk add --update --no-cache tor curl openrc libstdc++
 # libcurl4-openssl-dev
 
 RUN apk -U upgrade
@@ -38,12 +38,13 @@ ARG use_https=''
 ARG whoogle_port=5000
 ARG twitter_alt='farside.link/nitter'
 ARG youtube_alt='farside.link/invidious'
-ARG instagram_alt='farside.link/bibliogram/u'
 ARG reddit_alt='farside.link/libreddit'
 ARG medium_alt='farside.link/scribe'
 ARG translate_alt='farside.link/lingva'
 ARG imgur_alt='farside.link/rimgo'
 ARG wikipedia_alt='farside.link/wikiless'
+ARG imdb_alt='farside.link/libremdb'
+ARG quora_alt='farside.link/quetre'
 
 ENV CONFIG_VOLUME=$config_dir \
     WHOOGLE_URL_PREFIX=$url_prefix \
@@ -58,12 +59,13 @@ ENV CONFIG_VOLUME=$config_dir \
     EXPOSE_PORT=$whoogle_port \
     WHOOGLE_ALT_TW=$twitter_alt \
     WHOOGLE_ALT_YT=$youtube_alt \
-    WHOOGLE_ALT_IG=$instagram_alt \
     WHOOGLE_ALT_RD=$reddit_alt \
     WHOOGLE_ALT_MD=$medium_alt \
     WHOOGLE_ALT_TL=$translate_alt \
     WHOOGLE_ALT_IMG=$imgur_alt \
-    WHOOGLE_ALT_WIKI=$wikipedia_alt
+    WHOOGLE_ALT_WIKI=$wikipedia_alt \
+    WHOOGLE_ALT_IMDB=$imdb_alt \
+    WHOOGLE_ALT_QUORA=$quora_alt
 
 WORKDIR /whoogle
 
@@ -71,8 +73,7 @@ COPY --from=builder /install /usr/local
 COPY misc/tor/torrc /etc/tor/torrc
 COPY misc/tor/start-tor.sh misc/tor/start-tor.sh
 COPY app/ app/
-COPY run .
-#COPY whoogle.env .
+COPY run whoogle.env* ./
 
 # Create user/group to run as
 RUN adduser -D -g $DOCKER_USERID -u $DOCKER_USERID $DOCKER_USER

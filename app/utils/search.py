@@ -1,7 +1,6 @@
 import os
 import re
 from typing import Any
-
 from app.filter import Filter
 from app.request import gen_query
 from app.utils.misc import get_proxy_host_url
@@ -65,6 +64,7 @@ class Search:
         self.config = config
         self.session_key = session_key
         self.query = ''
+        self.widget = ''
         self.cookies_disabled = cookies_disabled
         self.search_type = self.request_params.get(
             'tbm') if 'tbm' in self.request_params else ''
@@ -105,6 +105,11 @@ class Search:
         # Strip leading '! ' for "feeling lucky" queries
         self.feeling_lucky = q.startswith('! ')
         self.query = q[2:] if self.feeling_lucky else q
+        # Check for possible widgets
+        self.widget = "ip" if re.search("([^a-z0-9]|^)my *[^a-z0-9] *(ip|internet protocol)" +
+                        "($|( *[^a-z0-9] *(((addres|address|adres|" +
+                        "adress)|a)? *$)))", self.query.lower()) else self.widget
+        self.widget = 'calculator' if re.search("calculator|calc|calclator|math", self.query.lower()) else self.widget
         return self.query
 
     def generate_response(self) -> str:
@@ -117,7 +122,10 @@ class Search:
         """
         mobile = 'Android' in self.user_agent or 'iPhone' in self.user_agent
         # reconstruct url if X-Forwarded-Host header present
-        root_url = get_proxy_host_url(self.request, self.request.url_root)
+        root_url = get_proxy_host_url(
+            self.request,
+            self.request.url_root,
+            root=True)
 
         content_filter = Filter(self.session_key,
                                 root_url=root_url,
@@ -139,7 +147,8 @@ class Search:
                                        force_mobile=view_image)
 
         # Produce cleanable html soup from response
-        html_soup = bsoup(get_body.text, 'html.parser')
+        get_body_safed = get_body.text.replace("&lt;","andlt;").replace("&gt;","andgt;")
+        html_soup = bsoup(get_body_safed, 'html.parser')
 
         # Replace current soup if view_image is active
         if view_image:
@@ -168,13 +177,3 @@ class Search:
 
             return str(formatted_results)
 
-    def check_kw_ip(self) -> re.Match:
-        """Checks for keywords related to 'my ip' in the query
-
-        Returns:
-            bool
-
-        """
-        return re.search("([^a-z0-9]|^)my *[^a-z0-9] *(ip|internet protocol)" +
-                         "($|( *[^a-z0-9] *(((addres|address|adres|" +
-                         "adress)|a)? *$)))", self.query.lower())
