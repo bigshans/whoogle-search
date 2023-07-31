@@ -1,6 +1,7 @@
 from app.models.config import Config
 from app.models.endpoint import Endpoint
-from bs4 import BeautifulSoup, NavigableString, MarkupResemblesLocatorWarning
+from app.utils.misc import list_to_dict
+from bs4 import BeautifulSoup, NavigableString
 import copy
 from flask import current_app
 import html
@@ -9,9 +10,6 @@ import urllib.parse as urlparse
 from urllib.parse import parse_qs
 import re
 import warnings
-
-# Suppress incorrect warnings from bs4 related to parsing HTML content
-warnings.filterwarnings('ignore', category=MarkupResemblesLocatorWarning)
 
 SKIP_ARGS = ['ref_src', 'utm']
 SKIP_PREFIX = ['//www.', '//mobile.', '//m.', 'www.', 'mobile.', 'm.']
@@ -45,6 +43,9 @@ SITE_ALTS = {
     'imdb.com': os.getenv('WHOOGLE_ALT_IMDB', 'farside.link/libremdb'),
     'quora.com': os.getenv('WHOOGLE_ALT_QUORA', 'farside.link/quetre')
 }
+
+# Include custom site redirects from WHOOGLE_REDIRECTS
+SITE_ALTS.update(list_to_dict(re.split(',|:', os.getenv('WHOOGLE_REDIRECTS', ''))))
 
 
 def contains_cjko(s: str) -> bool:
